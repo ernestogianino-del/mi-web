@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sabor y Aromas Peruanos</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body class="bg-yellow-100 text-gray-800 font-sans p-4">
+  <div class="max-w-4xl mx-auto space-y-6">
+    <h1 class="text-4xl font-bold text-center text-red-600">Sabor y Aromas Peruanos</h1>
+
+    <textarea id="inputTexto" maxlength="500" placeholder="Escribe aquí los platos con precio (ej: Lomo Saltado $12, Arroz con Pollo $10)" class="w-full p-4 text-lg border border-gray-300 rounded-lg"></textarea>
+    <button onclick="procesarTexto()" class="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 w-full text-xl">Agregar Platos</button>
+
+    <div>
+      <h2 class="text-2xl font-bold mt-6">Base de datos de Platos</h2>
+      <ul id="listaPlatos" class="space-y-2 mt-2"></ul>
+    </div>
+
+    <div>
+      <h2 class="text-2xl font-bold mt-6">Selecciona platos para el Menú</h2>
+      <ul id="listaSeleccion" class="space-y-2 mt-2"></ul>
+    </div>
+
+    <button onclick="generarMenu()" class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600 w-full text-xl">Generar Menú</button>
+
+    <div class="flex space-x-4 mt-4">
+      <button onclick="copiarMenu()" class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 flex-1">Copiar Menú</button>
+      <button onclick="descargarPDF()" class="bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-800 flex-1">Descargar PDF</button>
+      <button onclick="compartirWhatsApp()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 flex-1">Compartir WhatsApp</button>
+    </div>
+
+    <button onclick="sugerirProximoMenu()" class="bg-yellow-600 text-white px-6 py-2 rounded hover:bg-yellow-700 w-full text-xl mt-6">Sugerir Próximo Menú</button>
+
+    <div id="menuGenerado" class="mt-6 text-xl whitespace-pre-wrap bg-white p-4 rounded shadow min-h-[120px]"></div>
+
+    <div id="registroVentas" class="mt-6 hidden">
+      <h2 class="text-2xl font-bold mt-6">Registrar Ventas</h2>
+      <ul id="listaVentas" class="space-y-2 mt-2"></ul>
+      <button onclick="registrarVentas()" class="bg-purple-500 text-white px-6 py-2 rounded hover:bg-purple-600 w-full text-xl">Registrar Ventas</button>
+    </div>
+
+    <div id="reporteMensual" class="mt-6">
+      <h2 class="text-2xl font-bold mt-6">Resumen del Mes</h2>
+      <ul id="resumen" class="space-y-2 mt-2 text-lg"></ul>
+    </div>
+
+    <div id="topPlatos" class="mt-6">
+      <h2 class="text-2xl font-bold mt-6">Top 3 Platos Más Vendidos del Mes</h2>
+      <ul id="top3" class="space-y-2 mt-2 text-lg"></ul>
+    </div>
+
+    <div id="bajaRotacion" class="mt-6">
+      <h2 class="text-2xl font-bold mt-6">Platos con Baja Rotación (No vendidos en últimos 3 menús)</h2>
+      <ul id="bajaRotacionList" class="space-y-2 mt-2 text-lg"></ul>
+    </div>
+  </div>
+
+<script>
+  const platosDB = [];
+  const ventasMensuales = [];
+  const seleccion = [];
+  // Guardamos los últimos 3 menús generados para analizar baja rotación
+  const ultimosMenus = [];
+
+  const webhookGoogleSheets = "https://script.google.com/macros/s/AKfycbwtI1549FNRFo_SEg-du6-TlgQa3EAvL9H75BGVsVY_0LB2TIkk6XiE6xIA8C5NF7I6IA/exec";
+
+  function procesarTexto() {
+    const texto = document.getElementById('inputTexto').value;
+    const regex = /([^,$\n]+?)\s*\$\s*([\d.]+)/g;
+    let match;
+
+    while ((match = regex.exec(texto)) !== null) {
+      const nombre = match[1].trim();
+      const precio = parseFloat(match[2]);
+      if (!platosDB.find(p => p.nombre === nombre)) {
+        platosDB.push({ nombre, precio });
+      }
+    }
+    document.getElementById('inputTexto').value = '';
+    actualizarListaPlatos();
+  }
+
+  function actualizarListaPlatos() {
+    const lista = document.getElementById('listaPlatos');
+    lista.innerHTML = '';
+    platosDB.forEach((plato, i) => {
+      const li = document.createElement('li');
+      li.className = "flex justify-between bg-white p-2 rounded shadow";
+      li.innerHTML = `
+        <span>${plato.nombre} - $${plato.precio.toFixed(2)}</span>
+        <div>
+          <button onclick="seleccionar(${i})" class="bg-blue-400 text-white px-3 py-1 rounded mr-2">Seleccionar</button>
+          <button onclick="eliminarPlato(${i})" class="bg-red-500 text-white px-3 py-1 rounded">Eliminar</button>
+        </div>`;
+      lista.appendChild(li);
+    });
+    actualizarSeleccion();
+  }
+
+  function seleccionar(i) {
+    const plato = platosDB[i];
+    if (!seleccion.find(p => p.nombre === plato.nombre)) {
+      seleccion.push({ ...plato });
+      actualizarSeleccion();
+    }
+  }
+
+  function eliminarPlato(i) {
+    platosDB.splice(i, 1);
+    actualizarListaPlatos();
+  }
+
+  function actualizarSeleccion() {
+    const lista = document.getElementById('listaSeleccion');
+    lista.innerHTML = '';
+    seleccion.forEach((plato, i) => {
+      const li = document.createElement('li');
+      li.className = "flex justify-between bg-green-100 p-2 rounded";
+      li.innerHTML = `
+        <span>${plato.nombre} - $${plato.precio.toFixed(2)}</span>
+        <button onclick="quitarSeleccion(${i})" class="bg-yellow-600 text-white px-3 py-1 rounded">Quitar</button>`;
+      lista.appendChild(li);
+    });
+  }
+
+  function quitarSeleccion(i) {
+    seleccion.splice(i, 1);
+    actualizarSeleccion();
+  }
+
+  function generarMenu() {
+    if(seleccion.length === 0) {
+      alert("Por favor selecciona al menos un plato para generar el menú.");
+      return;
+    }
+
+    const hoy = new Date();
+    const dia = hoy.getDay();
+    const diasHastaSabado = (6 - dia + 7) % 7;
+    const sabado = new Date(hoy);
+    sabado.setDate(hoy.getDate() + diasHastaSabado);
+    const fechaStr = sabado.toLocaleDateString();
+
+    let texto = `Sabor y Aromas Peruanos\nMenú vigente hasta el ${fechaStr}\n\n`;
+    seleccion.forEach(plato => {
+      texto += `- ${plato.nombre} ($${plato.precio.toFixed(2)})\n`;
+    });
+
+    // Guardamos menú para análisis de baja rotación
+    guardarMenuActual();
+
+    document.getElementById('menuGenerado').innerText = texto;
+    document.getElementById('registroVentas').classList.remove('hidden');
+    actualizarListaVentas();
+    actualizarResumen();
+    actualizarTop3();
+    actualizarBajaRotacion();
+  }
+
+  // Guarda el menú actual en ultimosMenus, mantiene solo 3
+  function guardarMenuActual() {
+    const menuNombres = seleccion.map(p => p.nombre);
+    ultimosMenus.push(menuNombres);
+    if (ultimosMenus.length > 3) {
+      ultimosMenus.shift();
+    }
+  }
+
+  function copiarMenu() {
+    const texto = document.getElementById('menuGenerado').innerText;
+    if (!texto) {
+      alert("Genera primero un menú para copiar.");
+      return;
+    }
+    navigator.clipboard.writeText(texto).then(() => {
+      alert("Menú copiado al portapapeles.");
+    }).catch(() => {
+      alert("Error al copiar el menú.");
+    });
+  }
+
+  function descargarPDF() {
+    const element = document.createElement('div');
+    element.style.padding = '20px';
+    element.style.background = '#fff';
+    element.style.color = '#000';
+    element.style.fontFamily = 'Arial, sans-serif';
+    element.innerText = document.getElementById('menuGenerado').innerText || "No hay menú generado";
+
+    if (!element.innerText.trim()) {
+      alert("Genera primero un menú para descargar.");
+      return;
+    }
+
+    html2pdf()
+      .set({
+        margin: 1,
+        filename: 'Menu_SaborYAromas.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+      })
+      .from(element)
+      .save();
+  }
+
+  function compartirWhatsApp() {
+    const texto = encodeURIComponent(document.getElementById('menuGenerado').innerText);
+    if (!texto) {
+      alert("Genera primero un menú para compartir.");
+      return;
+    }
+    // WhatsApp web link
+    const url = `https://wa.me/?text=${texto}`;
+    window.open(url, '_blank');
+  }
+
+  function actualizarListaVentas() {
+    const lista = document.getElementById('listaVentas');
+    lista.innerHTML = '';
+    seleccion.forEach((plato, i) => {
+      const li = document.createElement('li');
+      li.className = "flex justify-between bg-white p-2 rounded";
+      li.innerHTML = `
+        <span>${plato.nombre} ($${plato.precio.toFixed(2)})</span>
+        <input type="number" id="venta${i}" placeholder="0" min="0" class="w-20 border border-gray-300 rounded text-center" />`;
+      lista.appendChild(li);
+    });
+  }
+
+  function registrarVentas() {
+    const fecha = new Date().toLocaleDateString();
+    const ventas = [];
+
+    seleccion.forEach((plato, i) => {
+      const cantidad = parseInt(document.getElementById(`venta${i}`).value) || 0;
+      if (cantidad > 0) {
+        ventasMensuales.push({ ...plato, cantidad, fecha });
+        ventas.push({ nombre: plato.nombre, precio: plato.precio, cantidad });
+      }
+    });
+
+    if(ventas.length === 0) {
+      alert("Ingresa al menos una cantidad para registrar ventas.");
+      return;
+    }
+
+    actualizarResumen();
+    actualizarTop3();
+    actualizarBajaRotacion();
+
+    // Enviar a Google Sheets
+    fetch(webhookGoogleSheets, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ventas })
+    })
+    .then(res => res.text())
+    .then(() => {
+      alert("✅ Ventas registradas y enviadas con éxito.");
+    })
+    .catch(() => {
+      alert("❌ Error al enviar las ventas a Google Sheets.");
+    });
+  }
+
+  function actualizarResumen() {
+    const resumen = document.getElementById('resumen');
+    resumen.innerHTML = '';
+    const totales = {};
+
+    ventasMensuales.forEach(v => {
+      if (!totales[v.nombre]) {
+        totales[v.nombre] = { cantidad: 0, total: 0 };
+      }
+      totales[v.nombre].cantidad += v.cantidad;
+      totales[v.nombre].total += v.cantidad * v.precio;
+    });
+
+    let totalMes = 0;
+    for (const [plato, datos] of Object.entries(totales)) {
+      const li = document.createElement('li');
+      li.textContent = `${plato}: Vendidos ${datos.cantidad}, Total $${datos.total.toFixed(2)}`;
+      resumen.appendChild(li);
+      totalMes += datos.total;
+    }
+
+    const totalLi = document.createElement('li');
+    totalLi.className = "font-bold mt-2";
+    totalLi.textContent = `TOTAL DEL MES: $${totalMes.toFixed(2)}`;
+    resumen.appendChild(totalLi);
+  }
+
+  // TOP 3 platos más vendidos
+  function actualizarTop3() {
+    const top3Elem = document.getElementById('top3');
+    top3Elem.innerHTML = '';
+    if (ventasMensuales.length === 0) {
+      top3Elem.innerHTML = '<li>No hay ventas registradas.</li>';
+      return;
+    }
+
+    const totales = {};
+    ventasMensuales.forEach(v => {
+      if (!totales[v.nombre]) totales[v.nombre] = 0;
+      totales[v.nombre] += v.cantidad;
+    });
+
+    const top3 = Object.entries(totales)
+      .sort((a,b) => b[1] - a[1])
+      .slice(0,3);
+
+    top3.forEach(([nombre, cantidad]) => {
+      const li = document.createElement('li');
+      li.textContent = `${nombre}: ${cantidad} unidades vendidas`;
+      top3Elem.appendChild(li);
+    });
+  }
+
+  // Platos con baja rotación (no vendidos en últimos 3 menús)
+  function actualizarBajaRotacion() {
+    const bajaElem = document.getElementById('bajaRotacionList');
+    bajaElem.innerHTML = '';
+
+    if(ultimosMenus.length < 3){
+      bajaElem.innerHTML = "<li>Se necesitan al menos 3 menús generados para analizar baja rotación.</li>";
+      return;
+    }
+
+    // Platos que no aparecieron en los últimos 3 menús
+    const todosPlatos = platosDB.map(p => p.nombre);
+    const platosEnUltimosMenus = new Set(ultimosMenus.flat());
+
+    const noRotacion = todosPlatos.filter(plato => !platosEnUltimosMenus.has(plato));
+
+    if(noRotacion.length === 0) {
+      bajaElem.innerHTML = "<li>No hay platos con baja rotación.</li>";
+      return;
+    }
+
+    noRotacion.forEach(plato => {
+      const li = document.createElement('li');
+      li.textContent = plato;
+      bajaElem.appendChild(li);
+    });
+  }
+
+  // Sugerir próximo menú basado en Top 3 + platos menos vendidos pero que están en base de datos
+  function sugerirProximoMenu() {
+    if (platosDB.length === 0) {
+      alert("Agrega platos primero para sugerir un menú.");
+      return;
+    }
+    if (ventasMensuales.length === 0) {
+      alert("Registra ventas para que la sugerencia sea más acertada.");
+      return;
+    }
+
+    const totales = {};
+    ventasMensuales.forEach(v => {
+      if (!totales[v.nombre]) totales[v.nombre] = 0;
+      totales[v.nombre] += v.cantidad;
+    });
+
+    // Top 3 platos
+    const top3 = Object.entries(totales)
+      .sort((a,b) => b[1] - a[1])
+      .slice(0,3)
+      .map(x => x[0]);
+
+    // Platos menos vendidos (cantidad <= 2 o no vendidos)
+    const menosVendidos = platosDB
+      .filter(p => !totales[p.nombre] || totales[p.nombre] <= 2)
+      .map(p => p.nombre);
+
+    // Selección sugerida = top3 + 2 platos menos vendidos (para variedad)
+    const sugeridos = new Set(top3);
+    let count = 0;
+    for (const p of menosVendidos) {
+      if (count >= 2) break;
+      if (!sugeridos.has(p)) {
+        sugeridos.add(p);
+        count++;
+      }
+    }
+
+    seleccion.length = 0; // Limpiar selección
+    platosDB.forEach(p => {
+      if (sugeridos.has(p.nombre)) {
+        seleccion.push({...p});
+      }
+    });
+
+    actualizarSeleccion();
+    alert("Se ha sugerido un menú basado en el análisis de ventas. Ahora puedes generar el menú.");
+  }
+</script>
+</body>
+</html>
